@@ -1,5 +1,5 @@
 {
-  "name": "surge-cache-harness",
+  "name": "page-cache-harness",
   "private": true,
   "type": "module",
   "scripts": {
