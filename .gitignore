@@ -1,0 +1,14 @@
+.DS_Store
+phpcs.xml
+phpunit.xml
+Thumbs.db
+wp-cli.local.yml
+node_modules/
+playwright-report/
+test-results/
+.wp-harness/
+surge/
+*.sql
+*.tar.gz
+*.zip
+.svn
