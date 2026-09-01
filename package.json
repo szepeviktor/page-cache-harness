@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "clean:wp": "rm -rf .wp-harness",
     "test": "playwright test",
     "test:headed": "playwright test --headed"
   },

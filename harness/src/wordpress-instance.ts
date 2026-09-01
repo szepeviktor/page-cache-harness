@@ -1,7 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createWriteStream, type WriteStream } from 'node:fs';
 import { existsSync } from 'node:fs';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { copyDir, resetDir, writeTextFile } from './fs.js';
@@ -135,6 +135,12 @@ export class WordPressInstance {
 
   async dispose(): Promise<void> {
     await this.stop();
+
+    if (process.env.KEEP_WP_HARNESS === '1') {
+      return;
+    }
+
+    await rm(this.dir, { force: true, recursive: true });
   }
 
   async restart(): Promise<void> {
