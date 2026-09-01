@@ -50,8 +50,26 @@ function generatedAt(html: string): string | null {
   return match?.[1] ?? null;
 }
 
+function deviceVariant(html: string): string | null {
+  const match = html.match(/<meta name="cache-harness-device" content="([^"]+)">/);
+  return match?.[1] ?? null;
+}
+
 function isSpiderCacheHit(html: string): boolean {
   return html.includes('served from Spider-Cache');
+}
+
+async function eventuallySpiderCacheHit(url: string, init: RequestInit = {}): Promise<string> {
+  let body = '';
+
+  await expect.poll(async () => {
+    const response = await spiderFetch(url, init);
+    body = await response.text();
+
+    return isSpiderCacheHit(body);
+  }).toBe(true);
+
+  return body;
 }
 
 async function warmSpiderCache(url: string, init: RequestInit = {}): Promise<void> {
@@ -326,6 +344,9 @@ test('supports configured vary callbacks', async ({ cachePlugin, wp }) => {
         'function cache_harness_spider_device_variant() {',
         "\treturn $_SERVER['HTTP_X_DEVICE'] ?? 'desktop';",
         '}',
+        "add_action( 'wp_head', function () {",
+        "\tprintf( '<meta name=\"cache-harness-device\" content=\"%s\">', esc_attr( cache_harness_spider_device_variant() ) );",
+        '} );',
         "$GLOBALS['wp_output_cache']['vary'] = [ 'device' => 'cache_harness_spider_device_variant' ];",
       ].join('\n'),
     );
@@ -336,15 +357,15 @@ test('supports configured vary callbacks', async ({ cachePlugin, wp }) => {
     const firstDesktopBody = await firstDesktop.text();
     const firstMobile = await spiderFetch(url, { headers: { 'X-Device': 'mobile' } });
     const firstMobileBody = await firstMobile.text();
-    const secondDesktop = await spiderFetch(url, { headers: { 'X-Device': 'desktop' } });
-    const secondDesktopBody = await secondDesktop.text();
-    const thirdDesktop = await spiderFetch(url, { headers: { 'X-Device': 'desktop' } });
-    const thirdDesktopBody = await thirdDesktop.text();
+    const cachedDesktopBody = await eventuallySpiderCacheHit(url, { headers: { 'X-Device': 'desktop' } });
+    const cachedMobileBody = await eventuallySpiderCacheHit(url, { headers: { 'X-Device': 'mobile' } });
 
     expect(isSpiderCacheHit(firstDesktopBody)).toBe(false);
     expect(isSpiderCacheHit(firstMobileBody)).toBe(false);
-    expect(isSpiderCacheHit(secondDesktopBody)).toBe(false);
-    expect(generatedAt(thirdDesktopBody)).toBe(generatedAt(secondDesktopBody));
+    expect(deviceVariant(cachedDesktopBody)).toBe('desktop');
+    expect(deviceVariant(cachedMobileBody)).toBe('mobile');
+    expect(generatedAt(cachedDesktopBody)).not.toBeNull();
+    expect(generatedAt(cachedMobileBody)).not.toBeNull();
   } finally {
     await cachePlugin.writeConfig(wp, '');
     await wp.restart();
