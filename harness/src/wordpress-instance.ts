@@ -84,10 +84,6 @@ export class WordPressInstance {
     this.serverLog = createWriteStream(this.path('server.log'), { flags: 'a' });
     this.server = spawn('wp', ['server', '--host=127.0.0.1', `--port=${this.port}`, `--docroot=${this.dir}`], {
       cwd: this.dir,
-      env: {
-        ...process.env,
-        WP_CLI_PHP: 'php8.5',
-      },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
@@ -151,9 +147,6 @@ export class WordPressInstance {
   async cli(args: string[], timeoutMs = 120_000): Promise<string> {
     const result = await run('wp', args, {
       cwd: this.dir,
-      env: {
-        WP_CLI_PHP: 'php8.5',
-      },
       timeoutMs,
     });
 

@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { writeFile } from 'node:fs/promises';
 
 export type CommandResult = {
   stdout: string;
@@ -89,52 +90,24 @@ export async function run(
 }
 
 export async function downloadToFile(url: string, file: string, timeoutMs = 180_000): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    const child = spawn('curl_chrome145', ['-L', '-s', '-o', file, url], {
-      stdio: ['ignore', 'ignore', 'pipe'],
-    });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
-    let stderr = '';
-    let settled = false;
+  try {
+    const response = await fetch(url, { signal: controller.signal });
 
-    const timeout = setTimeout(() => {
-      if (settled) {
-        return;
-      }
+    if (!response.ok) {
+      throw new Error(`Download failed with HTTP ${response.status}: ${url}`);
+    }
 
-      settled = true;
-      child.kill('SIGTERM');
-      reject(new Error(`Download timed out: ${url}`));
-    }, timeoutMs);
+    await writeFile(file, Buffer.from(await response.arrayBuffer()));
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error(`Download timed out: ${url}`);
+    }
 
-    child.stderr.on('data', (chunk) => {
-      stderr += chunk.toString();
-    });
-
-    child.on('error', (error) => {
-      if (settled) {
-        return;
-      }
-
-      settled = true;
-      clearTimeout(timeout);
-      reject(error);
-    });
-
-    child.on('close', (code) => {
-      if (settled) {
-        return;
-      }
-
-      settled = true;
-      clearTimeout(timeout);
-
-      if (code === 0) {
-        resolve();
-        return;
-      }
-
-      reject(new Error(`Download failed with exit code ${code}: ${url}\n${stderr.trim()}`));
-    });
-  });
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 }

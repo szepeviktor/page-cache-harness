@@ -76,6 +76,12 @@ add_action( 'init', function (): void {
 		exit;
 	}
 
+	if ( '/__cache_harness/empty-html' === $path ) {
+		status_header( 200 );
+		header( 'Content-Type: text/html; charset=UTF-8' );
+		exit;
+	}
+
 	if ( '/__cache_harness/debug-request' === $path ) {
 		status_header( 200 );
 		header( 'Content-Type: application/json; charset=UTF-8' );
@@ -91,6 +97,17 @@ add_action( 'init', function (): void {
 		exit;
 	}
 
+	if ( '/__cache_harness/json-timestamp' === $path ) {
+		status_header( 200 );
+		header( 'Content-Type: application/json; charset=UTF-8' );
+		echo wp_json_encode(
+			[
+				'generated_at' => sprintf( '%.6F', microtime( true ) ),
+			]
+		);
+		exit;
+	}
+
 	if ( '/__cache_harness/set-cookie' === $path ) {
 		status_header( 200 );
 		header( 'Content-Type: text/html; charset=UTF-8' );
@@ -98,6 +115,40 @@ add_action( 'init', function (): void {
 		echo '<!doctype html><html><head>';
 		cache_harness_timestamp_meta();
 		echo '</head><body><main>sets cookie</main></body></html>';
+		exit;
+	}
+
+	if ( '/__cache_harness/raw-cookie-variant' === $path ) {
+		$variant = 'none';
+		$raw_cookie = (string) ( $_SERVER['HTTP_COOKIE'] ?? '' );
+
+		if ( preg_match( '/(?:^|; )_cache_harness_variant=([^;]+)/', $raw_cookie, $matches ) ) {
+			$variant = sanitize_key( $matches[1] );
+		} elseif ( preg_match( '/(?:^|; )wordpress_test_cookie=([^;]+)/', $raw_cookie, $matches ) ) {
+			$variant = sanitize_key( $matches[1] );
+		}
+
+		status_header( 200 );
+		header( 'Content-Type: text/html; charset=UTF-8' );
+		echo '<!doctype html><html><head>';
+		cache_harness_timestamp_meta();
+		printf( '</head><body><main>raw cookie variant: %s</main></body></html>', esc_html( $variant ) );
+		exit;
+	}
+
+	if ( '/__cache_harness/raw-query-variant' === $path ) {
+		$variant = 'none';
+		$raw_query = (string) ( $_SERVER['QUERY_STRING'] ?? '' );
+
+		if ( preg_match( '/(?:^|&)utm_source=([^&]+)/', $raw_query, $matches ) ) {
+			$variant = sanitize_key( $matches[1] );
+		}
+
+		status_header( 200 );
+		header( 'Content-Type: text/html; charset=UTF-8' );
+		echo '<!doctype html><html><head>';
+		cache_harness_timestamp_meta();
+		printf( '</head><body><main>raw query variant: %s</main></body></html>', esc_html( $variant ) );
 		exit;
 	}
 
@@ -138,6 +189,41 @@ add_action( 'init', function (): void {
 		echo '<!doctype html><html><head>';
 		cache_harness_timestamp_meta();
 		echo '</head><body><main>max age zero</main></body></html>';
+		exit;
+	}
+
+	if ( '/__cache_harness/cache-control-s-maxage-zero' === $path ) {
+		status_header( 200 );
+		header( 'Content-Type: text/html; charset=UTF-8' );
+		header( 'Cache-Control: s-maxage=0' );
+		echo '<!doctype html><html><head>';
+		cache_harness_timestamp_meta();
+		echo '</head><body><main>shared max age zero</main></body></html>';
+		exit;
+	}
+
+	if ( '/__cache_harness/vary-header' === $path ) {
+		$variant = sanitize_key( $_SERVER['HTTP_X_CACHE_HARNESS_VARY'] ?? 'default' );
+		status_header( 200 );
+		header( 'Content-Type: text/html; charset=UTF-8' );
+		header( 'Vary: X-Cache-Harness-Vary' );
+		echo '<!doctype html><html><head>';
+		cache_harness_timestamp_meta();
+		printf( '</head><body><main>vary variant: %s</main></body></html>', esc_html( $variant ) );
+		exit;
+	}
+
+	if ( '/__cache_harness/fatal-after-output' === $path ) {
+		status_header( 200 );
+		header( 'Content-Type: text/html; charset=UTF-8' );
+		register_shutdown_function(
+			static function (): void {
+				cache_harness_trigger_undefined_shutdown_fatal();
+			}
+		);
+		echo '<!doctype html><html><head>';
+		cache_harness_timestamp_meta();
+		echo '</head><body><main>partial fatal output</main>';
 		exit;
 	}
 
