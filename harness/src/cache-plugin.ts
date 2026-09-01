@@ -19,7 +19,7 @@ export class SurgeAdapter implements CachePluginAdapter {
   readonly name = 'surge';
 
   async install(wp: WordPressInstance): Promise<void> {
-    await wp.copyPlugin('surge');
+    await wp.cli(['plugin', 'install', 'https://github.com/kovshenin/surge/archive/refs/heads/main.zip']);
   }
 
   async activate(wp: WordPressInstance): Promise<void> {
@@ -49,7 +49,7 @@ export class CacheEnablerAdapter implements CachePluginAdapter {
   readonly name = 'cache-enabler';
 
   async install(wp: WordPressInstance): Promise<void> {
-    await wp.cli(['plugin', 'install', 'cache-enabler']);
+    await wp.cli(['plugin', 'install', 'https://github.com/keycdn/cache-enabler/archive/refs/heads/master.zip']);
   }
 
   async activate(wp: WordPressInstance): Promise<void> {
@@ -81,7 +81,7 @@ export class BatcacheAdapter implements CachePluginAdapter {
   readonly name = 'batcache';
 
   async install(wp: WordPressInstance): Promise<void> {
-    await wp.copyPluginFrom('Compare/batcache', 'batcache');
+    await wp.cli(['plugin', 'install', 'https://github.com/Automattic/batcache/archive/refs/heads/master.zip']);
     await mkdir(wp.path('wp-content'), { recursive: true });
     await copyFile(
       path.join(repoRoot, 'harness', 'dropins', 'object-cache.php'),
@@ -93,8 +93,6 @@ export class BatcacheAdapter implements CachePluginAdapter {
         '<?php',
         '$GLOBALS[\'batcache\'] = [',
         "\t'max_age' => 300,",
-        "\t'times' => 0,",
-        "\t'seconds' => 0,",
         "\t'debug' => true,",
         '];',
         '$cache_harness_batcache_config = __DIR__ . \'/batcache-config.php\';',
@@ -130,7 +128,7 @@ export class WPSuperCacheAdapter implements CachePluginAdapter {
   readonly name = 'wp-super-cache';
 
   async install(wp: WordPressInstance): Promise<void> {
-    await wp.cli(['plugin', 'install', 'wp-super-cache']);
+    await wp.cli(['plugin', 'install', 'https://github.com/Automattic/wp-super-cache/archive/refs/heads/trunk.zip']);
     await this.writeConfig(wp, '');
     await copyFile(
       wp.path('wp-content', 'plugins', 'wp-super-cache', 'advanced-cache.php'),
@@ -240,7 +238,7 @@ export class WPSpiderCacheAdapter implements CachePluginAdapter {
   readonly name = 'wp-spider-cache';
 
   async install(wp: WordPressInstance): Promise<void> {
-    await wp.copyPluginFrom('Compare/wp-spider-cache', 'wp-spider-cache');
+    await wp.cli(['plugin', 'install', 'https://github.com/stuttter/wp-spider-cache/archive/refs/heads/master.zip']);
     await mkdir(wp.path('wp-content'), { recursive: true });
     await copyFile(
       path.join(repoRoot, 'harness', 'dropins', 'object-cache.php'),
@@ -288,8 +286,6 @@ export class WPSpiderCacheAdapter implements CachePluginAdapter {
         '}',
         '$GLOBALS[\'wp_output_cache\'] = [',
         "\t'max_age' => 300,",
-        "\t'times' => 1,",
-        "\t'seconds' => 0,",
         "\t'debug' => true,",
         "\t'headers' => [ 'X-Spider-Cache' => '1' ],",
         '];',

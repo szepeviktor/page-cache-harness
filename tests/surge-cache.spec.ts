@@ -33,7 +33,7 @@ test('bypasses responses that send Set-Cookie', async ({ cachePlugin, wp }) => {
   expect(first.headers.get('set-cookie')).toContain('cache_harness_cookie=');
 });
 
-test('bypasses private cache-control responses', async ({ cachePlugin, wp }) => {
+test('treats private cache-control responses as misses', async ({ cachePlugin, wp }) => {
   const response = await fetch(`${wp.url}/__cache_harness/cache-control-private`);
 
   expect(response.status).toBe(200);

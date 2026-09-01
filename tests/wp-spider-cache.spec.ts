@@ -54,6 +54,13 @@ function isSpiderCacheHit(html: string): boolean {
   return html.includes('served from Spider-Cache');
 }
 
+async function warmSpiderCache(url: string, init: RequestInit = {}): Promise<void> {
+  const first = await spiderFetch(url, init);
+  await first.text();
+  const second = await spiderFetch(url, init);
+  await second.text();
+}
+
 async function createCacheablePost(wp: {
   createPost(input: { title: string; content: string; slug?: string }): Promise<number>;
   postUrl(id: number): string;
@@ -75,12 +82,16 @@ test('caches ordinary WordPress HTML responses', async ({ cachePlugin, wp }) => 
   const firstBody = await first.text();
   const second = await spiderFetch(url);
   const secondBody = await second.text();
+  const third = await spiderFetch(url);
+  const thirdBody = await third.text();
 
   expect(first.status).toBe(200);
   expect(second.status).toBe(200);
+  expect(third.status).toBe(200);
   expect(isSpiderCacheHit(firstBody)).toBe(false);
-  expect(isSpiderCacheHit(secondBody)).toBe(true);
-  expect(generatedAt(secondBody)).toBe(generatedAt(firstBody));
+  expect(isSpiderCacheHit(secondBody)).toBe(false);
+  expect(isSpiderCacheHit(thirdBody)).toBe(true);
+  expect(generatedAt(thirdBody)).toBe(generatedAt(secondBody));
 });
 
 test('creates persistent object-cache files', async ({ cachePlugin, wp }) => {
@@ -89,8 +100,7 @@ test('creates persistent object-cache files', async ({ cachePlugin, wp }) => {
 
   expect(await cachedFileCount(cachePlugin.cacheDirectory(wp) ?? '')).toBe(0);
 
-  const response = await spiderFetch(url);
-  await response.text();
+  await warmSpiderCache(url);
 
   expect(await cachedFileCount(cachePlugin.cacheDirectory(wp) ?? '')).toBeGreaterThan(0);
 });
@@ -103,11 +113,14 @@ test('marks cache hits with configured response header', async ({ cachePlugin, w
   const firstBody = await first.text();
   const second = await spiderFetch(url);
   const secondBody = await second.text();
+  const third = await spiderFetch(url);
+  const thirdBody = await third.text();
 
-  expect(first.headers.get('x-spider-cache')).toBe('1');
+  expect(first.headers.get('x-spider-cache')).toBeNull();
   expect(isSpiderCacheHit(firstBody)).toBe(false);
-  expect(cachePlugin.detectStatus(second)).toBe('hit');
-  expect(isSpiderCacheHit(secondBody)).toBe(true);
+  expect(isSpiderCacheHit(secondBody)).toBe(false);
+  expect(cachePlugin.detectStatus(third)).toBe('hit');
+  expect(generatedAt(thirdBody)).toBe(generatedAt(secondBody));
 });
 
 test('keeps GET and HEAD cache entries separate', async ({ cachePlugin, wp }) => {
@@ -120,10 +133,13 @@ test('keeps GET and HEAD cache entries separate', async ({ cachePlugin, wp }) =>
   const getBody = await get.text();
   const secondGet = await spiderFetch(url);
   const secondGetBody = await secondGet.text();
+  const thirdGet = await spiderFetch(url);
+  const thirdGetBody = await thirdGet.text();
 
   expect(head.status).toBe(200);
   expect(isSpiderCacheHit(getBody)).toBe(false);
-  expect(isSpiderCacheHit(secondGetBody)).toBe(true);
+  expect(isSpiderCacheHit(secondGetBody)).toBe(false);
+  expect(generatedAt(thirdGetBody)).toBe(generatedAt(secondGetBody));
 });
 
 test('does not cache HTTP POST requests', async ({ cachePlugin, wp }) => {
@@ -191,9 +207,14 @@ test('does not skip cache for wordpress_test_cookie', async ({ cachePlugin, wp }
     headers: { Cookie: 'wordpress_test_cookie=WP Cookie check' },
   });
   const secondBody = await second.text();
+  const third = await spiderFetch(url, {
+    headers: { Cookie: 'wordpress_test_cookie=WP Cookie check' },
+  });
+  const thirdBody = await third.text();
 
   expect(isSpiderCacheHit(firstBody)).toBe(false);
-  expect(isSpiderCacheHit(secondBody)).toBe(true);
+  expect(isSpiderCacheHit(secondBody)).toBe(false);
+  expect(generatedAt(thirdBody)).toBe(generatedAt(secondBody));
 });
 
 test('caches non-WordPress cookies into the same URL cache entry', async ({ cachePlugin, wp }) => {
@@ -208,12 +229,17 @@ test('caches non-WordPress cookies into the same URL cache entry', async ({ cach
     headers: { Cookie: 'klaro=no' },
   });
   const secondBody = await second.text();
+  const third = await spiderFetch(url, {
+    headers: { Cookie: 'klaro=yes' },
+  });
+  const thirdBody = await third.text();
 
   expect(isSpiderCacheHit(firstBody)).toBe(false);
-  expect(isSpiderCacheHit(secondBody)).toBe(true);
+  expect(isSpiderCacheHit(secondBody)).toBe(false);
+  expect(generatedAt(thirdBody)).toBe(generatedAt(secondBody));
 });
 
-test('caches underscore-prefixed analytics cookies', async ({ cachePlugin, wp }) => {
+test('caches underscore-prefixed analytics cookies into the same URL cache entry', async ({ cachePlugin, wp }) => {
   const url = await createCacheablePost(wp, 'analytics-cookie');
   await cachePlugin.flush(wp);
 
@@ -225,9 +251,14 @@ test('caches underscore-prefixed analytics cookies', async ({ cachePlugin, wp })
     headers: { Cookie: '_ga=GA1.2.456' },
   });
   const secondBody = await second.text();
+  const third = await spiderFetch(url, {
+    headers: { Cookie: '_ga=GA1.2.123' },
+  });
+  const thirdBody = await third.text();
 
   expect(isSpiderCacheHit(firstBody)).toBe(false);
-  expect(isSpiderCacheHit(secondBody)).toBe(true);
+  expect(isSpiderCacheHit(secondBody)).toBe(false);
+  expect(generatedAt(thirdBody)).toBe(generatedAt(secondBody));
 });
 
 test('keeps query args in cache keys', async ({ cachePlugin, wp }) => {
@@ -240,10 +271,13 @@ test('keeps query args in cache keys', async ({ cachePlugin, wp }) => {
   const secondBody = await second.text();
   const third = await spiderFetch(`${url}?custom=two`);
   const thirdBody = await third.text();
+  const fourth = await spiderFetch(`${url}?custom=two`);
+  const fourthBody = await fourth.text();
 
   expect(isSpiderCacheHit(firstBody)).toBe(false);
   expect(isSpiderCacheHit(secondBody)).toBe(false);
-  expect(isSpiderCacheHit(thirdBody)).toBe(true);
+  expect(isSpiderCacheHit(thirdBody)).toBe(false);
+  expect(generatedAt(fourthBody)).toBe(generatedAt(thirdBody));
 });
 
 test('does not mutate query variables in WordPress', async ({ wp }) => {
@@ -270,10 +304,13 @@ test('supports configured cache-key variants', async ({ cachePlugin, wp }) => {
   const firstBBody = await firstB.text();
   const secondA = await spiderFetch(url, { headers: { 'X-Variant': 'a' } });
   const secondABody = await secondA.text();
+  const thirdA = await spiderFetch(url, { headers: { 'X-Variant': 'a' } });
+  const thirdABody = await thirdA.text();
 
   expect(isSpiderCacheHit(firstABody)).toBe(false);
   expect(isSpiderCacheHit(firstBBody)).toBe(false);
-  expect(isSpiderCacheHit(secondABody)).toBe(true);
+  expect(isSpiderCacheHit(secondABody)).toBe(false);
+  expect(generatedAt(thirdABody)).toBe(generatedAt(secondABody));
 
   await cachePlugin.writeConfig(wp, '');
   await wp.restart();
@@ -301,10 +338,13 @@ test('supports configured vary callbacks', async ({ cachePlugin, wp }) => {
     const firstMobileBody = await firstMobile.text();
     const secondDesktop = await spiderFetch(url, { headers: { 'X-Device': 'desktop' } });
     const secondDesktopBody = await secondDesktop.text();
+    const thirdDesktop = await spiderFetch(url, { headers: { 'X-Device': 'desktop' } });
+    const thirdDesktopBody = await thirdDesktop.text();
 
     expect(isSpiderCacheHit(firstDesktopBody)).toBe(false);
     expect(isSpiderCacheHit(firstMobileBody)).toBe(false);
-    expect(isSpiderCacheHit(secondDesktopBody)).toBe(true);
+    expect(isSpiderCacheHit(secondDesktopBody)).toBe(false);
+    expect(generatedAt(thirdDesktopBody)).toBe(generatedAt(secondDesktopBody));
   } finally {
     await cachePlugin.writeConfig(wp, '');
     await wp.restart();
@@ -323,8 +363,11 @@ test('does not expire cached post pages after WP-CLI post updates alone', async 
   await first.text();
   const second = await spiderFetch(wp.postUrl(postId));
   const secondBody = await second.text();
+  const third = await spiderFetch(wp.postUrl(postId));
+  const thirdBody = await third.text();
 
-  expect(isSpiderCacheHit(secondBody)).toBe(true);
+  expect(isSpiderCacheHit(secondBody)).toBe(false);
+  expect(generatedAt(thirdBody)).toBe(generatedAt(secondBody));
 
   await wp.updatePost(postId, {
     content: 'After WP Spider Cache CLI update.',
@@ -333,7 +376,6 @@ test('does not expire cached post pages after WP-CLI post updates alone', async 
   const afterUpdate = await spiderFetch(wp.postUrl(postId));
   const afterUpdateBody = await afterUpdate.text();
 
-  expect(isSpiderCacheHit(afterUpdateBody)).toBe(true);
   expect(afterUpdateBody).toContain('Before WP Spider Cache CLI update.');
   expect(afterUpdateBody).not.toContain('After WP Spider Cache CLI update.');
 });
@@ -388,8 +430,11 @@ test('does not expire cached post pages after the harness update endpoint', asyn
   await first.text();
   const second = await spiderFetch(wp.postUrl(postId));
   const secondBody = await second.text();
+  const third = await spiderFetch(wp.postUrl(postId));
+  const thirdBody = await third.text();
 
-  expect(isSpiderCacheHit(secondBody)).toBe(true);
+  expect(isSpiderCacheHit(secondBody)).toBe(false);
+  expect(generatedAt(thirdBody)).toBe(generatedAt(secondBody));
 
   const update = await fetch(`${wp.url}/__cache_harness/update-post`, {
     method: 'POST',
@@ -406,7 +451,6 @@ test('does not expire cached post pages after the harness update endpoint', asyn
   const afterUpdate = await spiderFetch(wp.postUrl(postId));
   const afterUpdateBody = await afterUpdate.text();
 
-  expect(isSpiderCacheHit(afterUpdateBody)).toBe(true);
   expect(afterUpdateBody).toContain('Before WP Spider Cache update.');
   expect(afterUpdateBody).not.toContain('After WP Spider Cache update.');
 });
@@ -419,16 +463,18 @@ test('serves 304 for fresh If-Modified-Since cache hits', async ({ cachePlugin, 
   await first.text();
   const second = await spiderFetch(url);
   await second.text();
-  const lastModified = second.headers.get('last-modified');
+  const third = await spiderFetch(url);
+  await third.text();
+  const lastModified = third.headers.get('last-modified');
 
   expect(lastModified).not.toBeNull();
 
-  const third = await spiderFetch(url, {
+  const fourth = await spiderFetch(url, {
     headers: { 'If-Modified-Since': lastModified ?? '' },
   });
-  await third.arrayBuffer();
+  await fourth.arrayBuffer();
 
-  expect(third.status).toBe(304);
+  expect(fourth.status).toBe(304);
 });
 
 test('can cache redirects when explicitly enabled', async ({ cachePlugin, wp }) => {

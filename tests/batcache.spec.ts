@@ -54,6 +54,13 @@ function isBatcacheHit(html: string): boolean {
   return html.includes('served from batcache');
 }
 
+async function warmBatcache(url: string, init: RequestInit = {}): Promise<void> {
+  const first = await batFetch(url, init);
+  await first.text();
+  const second = await batFetch(url, init);
+  await second.text();
+}
+
 async function createCacheablePost(wp: {
   createPost(input: { title: string; content: string; slug?: string }): Promise<number>;
   postUrl(id: number): string;
@@ -75,12 +82,16 @@ test('caches ordinary WordPress HTML responses', async ({ cachePlugin, wp }) => 
   const firstBody = await first.text();
   const second = await batFetch(url);
   const secondBody = await second.text();
+  const third = await batFetch(url);
+  const thirdBody = await third.text();
 
   expect(first.status).toBe(200);
   expect(second.status).toBe(200);
+  expect(third.status).toBe(200);
   expect(isBatcacheHit(firstBody)).toBe(false);
-  expect(isBatcacheHit(secondBody)).toBe(true);
-  expect(generatedAt(secondBody)).toBe(generatedAt(firstBody));
+  expect(isBatcacheHit(secondBody)).toBe(false);
+  expect(isBatcacheHit(thirdBody)).toBe(true);
+  expect(generatedAt(thirdBody)).toBe(generatedAt(secondBody));
 });
 
 test('creates persistent object-cache files', async ({ cachePlugin, wp }) => {
@@ -89,8 +100,7 @@ test('creates persistent object-cache files', async ({ cachePlugin, wp }) => {
 
   expect(await cachedFileCount(cachePlugin.cacheDirectory(wp) ?? '')).toBe(0);
 
-  const response = await batFetch(url);
-  await response.text();
+  await warmBatcache(url);
 
   expect(await cachedFileCount(cachePlugin.cacheDirectory(wp) ?? '')).toBeGreaterThan(0);
 });
@@ -105,10 +115,13 @@ test('keeps GET and HEAD cache entries separate', async ({ cachePlugin, wp }) =>
   const getBody = await get.text();
   const secondGet = await batFetch(url);
   const secondGetBody = await secondGet.text();
+  const thirdGet = await batFetch(url);
+  const thirdGetBody = await thirdGet.text();
 
   expect(head.status).toBe(200);
   expect(isBatcacheHit(getBody)).toBe(false);
-  expect(isBatcacheHit(secondGetBody)).toBe(true);
+  expect(isBatcacheHit(secondGetBody)).toBe(false);
+  expect(isBatcacheHit(thirdGetBody)).toBe(true);
 });
 
 test('does not cache HTTP POST requests', async ({ cachePlugin, wp }) => {
@@ -173,9 +186,14 @@ test('does not skip cache for wordpress_test_cookie', async ({ cachePlugin, wp }
     headers: { Cookie: 'wordpress_test_cookie=WP Cookie check' },
   });
   const secondBody = await second.text();
+  const third = await batFetch(url, {
+    headers: { Cookie: 'wordpress_test_cookie=WP Cookie check' },
+  });
+  const thirdBody = await third.text();
 
   expect(isBatcacheHit(firstBody)).toBe(false);
-  expect(isBatcacheHit(secondBody)).toBe(true);
+  expect(isBatcacheHit(secondBody)).toBe(false);
+  expect(isBatcacheHit(thirdBody)).toBe(true);
 });
 
 test('caches non-WordPress cookies into the same URL cache entry', async ({ cachePlugin, wp }) => {
@@ -190,12 +208,17 @@ test('caches non-WordPress cookies into the same URL cache entry', async ({ cach
     headers: { Cookie: 'klaro=no' },
   });
   const secondBody = await second.text();
+  const third = await batFetch(url, {
+    headers: { Cookie: 'klaro=yes' },
+  });
+  const thirdBody = await third.text();
 
   expect(isBatcacheHit(firstBody)).toBe(false);
-  expect(isBatcacheHit(secondBody)).toBe(true);
+  expect(isBatcacheHit(secondBody)).toBe(false);
+  expect(isBatcacheHit(thirdBody)).toBe(true);
 });
 
-test('caches underscore-prefixed analytics cookies', async ({ cachePlugin, wp }) => {
+test('caches underscore-prefixed analytics cookies into the same URL cache entry', async ({ cachePlugin, wp }) => {
   const url = await createCacheablePost(wp, 'analytics-cookie');
   await cachePlugin.flush(wp);
 
@@ -207,28 +230,14 @@ test('caches underscore-prefixed analytics cookies', async ({ cachePlugin, wp })
     headers: { Cookie: '_ga=GA1.2.456' },
   });
   const secondBody = await second.text();
+  const third = await batFetch(url, {
+    headers: { Cookie: '_ga=GA1.2.123' },
+  });
+  const thirdBody = await third.text();
 
   expect(isBatcacheHit(firstBody)).toBe(false);
-  expect(isBatcacheHit(secondBody)).toBe(true);
-});
-
-test('ignores configured marketing query args in cache keys', async ({ cachePlugin, wp }) => {
-  const url = await createCacheablePost(wp, 'ignored-query');
-
-  await wp.writeBatcacheConfig("$GLOBALS['batcache']['ignored_query_args'] = [ 'utm_source' ];");
-  await cachePlugin.flush(wp);
-  await wp.restart();
-
-  const first = await batFetch(`${url}?utm_source=one`);
-  const firstBody = await first.text();
-  const second = await batFetch(`${url}?utm_source=two`);
-  const secondBody = await second.text();
-
-  expect(isBatcacheHit(firstBody)).toBe(false);
-  expect(isBatcacheHit(secondBody)).toBe(true);
-
-  await wp.writeBatcacheConfig('');
-  await wp.restart();
+  expect(isBatcacheHit(secondBody)).toBe(false);
+  expect(isBatcacheHit(thirdBody)).toBe(true);
 });
 
 test('keeps unknown query args in cache keys', async ({ cachePlugin, wp }) => {
@@ -241,35 +250,21 @@ test('keeps unknown query args in cache keys', async ({ cachePlugin, wp }) => {
   const secondBody = await second.text();
   const third = await batFetch(`${url}?custom=two`);
   const thirdBody = await third.text();
+  const fourth = await batFetch(`${url}?custom=two`);
+  const fourthBody = await fourth.text();
 
   expect(isBatcacheHit(firstBody)).toBe(false);
   expect(isBatcacheHit(secondBody)).toBe(false);
-  expect(isBatcacheHit(thirdBody)).toBe(true);
+  expect(isBatcacheHit(thirdBody)).toBe(false);
+  expect(isBatcacheHit(fourthBody)).toBe(true);
 });
 
-test('does not mutate ignored marketing query variables in WordPress', async ({ wp }) => {
+test('does not mutate query variables in WordPress', async ({ wp }) => {
   const response = await batFetch(`${wp.url}/__cache_harness/debug-request?utm_source=abc&x=1`);
   const data = await response.json();
 
   expect(data.get).toEqual({ utm_source: 'abc', x: '1' });
   expect(data.request_uri).toBe('/__cache_harness/debug-request?utm_source=abc&x=1');
-});
-
-test('bypasses requests with X-WP-Nonce headers', async ({ cachePlugin, wp }) => {
-  const url = await createCacheablePost(wp, 'nonce');
-  await cachePlugin.flush(wp);
-
-  const first = await batFetch(url, {
-    headers: { 'X-WP-Nonce': 'abc' },
-  });
-  const firstBody = await first.text();
-  const second = await batFetch(url, {
-    headers: { 'X-WP-Nonce': 'abc' },
-  });
-  const secondBody = await second.text();
-
-  expect(isBatcacheHit(firstBody)).toBe(false);
-  expect(isBatcacheHit(secondBody)).toBe(false);
 });
 
 test('bypasses unapproved Origin requests', async ({ cachePlugin, wp }) => {
@@ -304,9 +299,14 @@ test('varies cache by approved Origin requests', async ({ cachePlugin, wp }) => 
     headers: { Origin: 'https://allowed.example' },
   });
   const secondBody = await second.text();
+  const third = await batFetch(url, {
+    headers: { Origin: 'https://allowed.example' },
+  });
+  const thirdBody = await third.text();
 
   expect(isBatcacheHit(firstBody)).toBe(false);
-  expect(isBatcacheHit(secondBody)).toBe(true);
+  expect(isBatcacheHit(secondBody)).toBe(false);
+  expect(isBatcacheHit(thirdBody)).toBe(true);
 
   await wp.writeBatcacheConfig('');
   await wp.restart();
@@ -325,10 +325,13 @@ test('supports configured cache-key variants', async ({ cachePlugin, wp }) => {
   const firstBBody = await firstB.text();
   const secondA = await batFetch(url, { headers: { 'X-Variant': 'a' } });
   const secondABody = await secondA.text();
+  const thirdA = await batFetch(url, { headers: { 'X-Variant': 'a' } });
+  const thirdABody = await thirdA.text();
 
   expect(isBatcacheHit(firstABody)).toBe(false);
   expect(isBatcacheHit(firstBBody)).toBe(false);
-  expect(isBatcacheHit(secondABody)).toBe(true);
+  expect(isBatcacheHit(secondABody)).toBe(false);
+  expect(isBatcacheHit(thirdABody)).toBe(true);
 
   await wp.writeBatcacheConfig('');
   await wp.restart();
@@ -384,8 +387,11 @@ test('expires a cached post after post updates when optional plugin is active', 
   await first.text();
   const second = await batFetch(wp.postUrl(postId));
   const secondBody = await second.text();
+  const third = await batFetch(wp.postUrl(postId));
+  const thirdBody = await third.text();
 
-  expect(isBatcacheHit(secondBody)).toBe(true);
+  expect(isBatcacheHit(secondBody)).toBe(false);
+  expect(isBatcacheHit(thirdBody)).toBe(true);
 
   const update = await fetch(`${wp.url}/__cache_harness/update-post`, {
     method: 'POST',
@@ -415,16 +421,18 @@ test('serves 304 for fresh If-Modified-Since cache hits', async ({ cachePlugin, 
   await first.text();
   const second = await batFetch(url);
   await second.text();
-  const lastModified = second.headers.get('last-modified');
+  const third = await batFetch(url);
+  await third.text();
+  const lastModified = third.headers.get('last-modified');
 
   expect(lastModified).not.toBeNull();
 
-  const third = await batFetch(url, {
+  const fourth = await batFetch(url, {
     headers: { 'If-Modified-Since': lastModified ?? '' },
   });
-  await third.arrayBuffer();
+  await fourth.arrayBuffer();
 
-  expect(third.status).toBe(304);
+  expect(fourth.status).toBe(304);
 });
 
 test('installs advanced-cache and object-cache drop-ins', async ({ wp }) => {

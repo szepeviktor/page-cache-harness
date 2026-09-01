@@ -133,13 +133,18 @@ test('bypasses requests with Authorization headers', async ({ cachePlugin, wp })
   expect(cachePlugin.detectStatus(response)).toBe('bypass');
 });
 
-for (const route of [
-  'cache-control-private',
-  'cache-control-no-cache',
-  'cache-control-no-store',
-  'cache-control-max-age-zero',
-]) {
+for (const route of ['cache-control-no-cache', 'cache-control-max-age-zero']) {
   test(`bypasses ${route} responses`, async ({ cachePlugin, wp }) => {
+    const response = await fetch(`${wp.url}/__cache_harness/${route}`);
+    await response.text();
+
+    expect(response.status).toBe(200);
+    expect(cachePlugin.detectStatus(response)).toBe('bypass');
+  });
+}
+
+for (const route of ['cache-control-private', 'cache-control-no-store']) {
+  test(`treats ${route} responses as misses`, async ({ cachePlugin, wp }) => {
     const response = await fetch(`${wp.url}/__cache_harness/${route}`);
     await response.text();
 

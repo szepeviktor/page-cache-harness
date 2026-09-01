@@ -72,21 +72,6 @@ export class WordPressInstance {
     await this.installHarnessMuPlugin();
   }
 
-  async copyPlugin(pluginSlug: string): Promise<void> {
-    await this.copyPluginFrom(pluginSlug, pluginSlug);
-  }
-
-  async copyPluginFrom(sourcePath: string, pluginSlug: string): Promise<void> {
-    const from = path.join(repoRoot, sourcePath);
-    const to = this.path('wp-content', 'plugins', pluginSlug);
-
-    if (!existsSync(from)) {
-      throw new Error(`Missing local plugin fixture: ${from}`);
-    }
-
-    await copyDir(from, to);
-  }
-
   async installHarnessMuPlugin(): Promise<void> {
     await mkdir(this.path('wp-content', 'mu-plugins'), { recursive: true });
     await copyDir(
