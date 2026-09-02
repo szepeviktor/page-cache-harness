@@ -78,6 +78,24 @@ test('removes ignored query vars from the WordPress request state', async ({ wp 
   expect(data.request_uri).toBe('/__cache_harness/debug-request?x=1');
 });
 
+test('removes empty ignored query vars from the WordPress request URI', async ({ wp }) => {
+  const response = await fetch(`${wp.url}/__cache_harness/debug-request?utm_source=&x=1`);
+  const data = await response.json();
+
+  expect(response.status).toBe(200);
+  expect(data.get).toEqual({ x: '1' });
+  expect(data.request_uri).toBe('/__cache_harness/debug-request?x=1');
+});
+
+test('removes valueless ignored query vars from the WordPress request URI', async ({ wp }) => {
+  const response = await fetch(`${wp.url}/__cache_harness/debug-request?utm_source&x=1`);
+  const data = await response.json();
+
+  expect(response.status).toBe(200);
+  expect(data.get).toEqual({ x: '1' });
+  expect(data.request_uri).toBe('/__cache_harness/debug-request?x=1');
+});
+
 test('removes underscore-prefixed cookies from the WordPress request state', async ({ wp }) => {
   const response = await fetch(`${wp.url}/__cache_harness/debug-request`, {
     headers: {

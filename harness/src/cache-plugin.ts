@@ -77,6 +77,66 @@ export class CacheEnablerAdapter implements CachePluginAdapter {
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
+export class WPRocketAdapter implements CachePluginAdapter {
+  readonly name = 'wp-rocket';
+
+  async install(wp: WordPressInstance): Promise<void> {
+    await wp.cli(['plugin', 'install', path.join(repoRoot, 'wp-rocket.zip'), '--force']);
+  }
+
+  async activate(wp: WordPressInstance): Promise<void> {
+    await wp.cli(['plugin', 'activate', 'wp-rocket']);
+    await wp.cli([
+      'eval',
+      [
+        "$email = 'cache-harness@example.test';",
+        "$settings = get_option( 'wp_rocket_settings', [] );",
+        '$settings = array_merge( [',
+        "'secret_cache_key' => 'cacheharness',",
+        "'consumer_key' => '12345678',",
+        "'consumer_email' => $email,",
+        "'secret_key' => hash( 'crc32', $email ),",
+        "'license' => '1',",
+        "'cache_mobile' => 0,",
+        "'do_caching_mobile_files' => 0,",
+        "'cache_webp' => 0,",
+        "'cache_logged_user' => 0,",
+        "'cache_ssl' => 0,",
+        "'cache_reject_uri' => [],",
+        "'cache_reject_cookies' => [],",
+        "'cache_reject_ua' => [],",
+        "'cache_query_strings' => [],",
+        "'cache_purge_pages' => [],",
+        "'minify_css' => 0,",
+        "'minify_js' => 0,",
+        "'manual_preload' => 0,",
+        "'cdn' => 0,",
+        '], is_array( $settings ) ? $settings : [] );',
+        "update_option( 'wp_rocket_settings', $settings );",
+        "if ( function_exists( 'rocket_init_cache_dir' ) ) { rocket_init_cache_dir(); }",
+        "if ( function_exists( 'rocket_init_config_dir' ) ) { rocket_init_config_dir(); }",
+        "if ( function_exists( 'rocket_generate_config_file' ) ) { rocket_generate_config_file(); }",
+        "if ( function_exists( 'rocket_generate_advanced_cache_file' ) ) { rocket_generate_advanced_cache_file(); }",
+      ].join(' '),
+    ]);
+  }
+
+  async flush(wp: WordPressInstance): Promise<void> {
+    await wp.cli(['eval', "if ( function_exists( 'rocket_clean_domain' ) ) { rocket_clean_domain(); }"]);
+    await rm(wp.path('wp-content', 'cache', 'wp-rocket'), { force: true, recursive: true });
+    await mkdir(wp.path('wp-content', 'cache', 'wp-rocket'), { recursive: true });
+  }
+
+  cacheDirectory(wp: WordPressInstance): string {
+    return wp.path('wp-content', 'cache', 'wp-rocket');
+  }
+
+  detectStatus(response: Response): CacheStatus {
+    void response;
+    return 'unknown';
+  }
+}
+
 export class BatcacheAdapter implements CachePluginAdapter {
   readonly name = 'batcache';
 

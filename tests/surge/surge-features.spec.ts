@@ -56,6 +56,22 @@ test('serves cache hits with fpassthru_alt enabled', async ({ cachePlugin, wp })
   await wp.restart();
 });
 
+test('does not cache empty HTTP 200 responses', async ({ cachePlugin, wp }) => {
+  await cachePlugin.flush(wp);
+
+  const first = await fetch(`${wp.url}/__cache_harness/empty-html`);
+  const firstBody = await first.text();
+  const second = await fetch(`${wp.url}/__cache_harness/empty-html`);
+  const secondBody = await second.text();
+
+  expect(first.status).toBe(200);
+  expect(second.status).toBe(200);
+  expect(firstBody).toBe('');
+  expect(secondBody).toBe('');
+  expect(cachePlugin.detectStatus(second)).not.toBe('hit');
+  expect(await cachedFileCount(cachePlugin.cacheDirectory(wp) ?? '')).toBe(0);
+});
+
 test('ignores wordpress_test_cookie in the cache key', async ({ cachePlugin, wp }) => {
   await cachePlugin.flush(wp);
 
@@ -91,6 +107,68 @@ test('uses non-ignored cookies as cache-key variants', async ({ cachePlugin, wp 
   expect(cachePlugin.detectStatus(first)).toBe('miss');
   expect(cachePlugin.detectStatus(second)).toBe('miss');
   expect(cachePlugin.detectStatus(third)).toBe('hit');
+});
+
+test('does not reuse cache when raw output varies by ignored underscore cookies', async ({
+  cachePlugin,
+  wp,
+}) => {
+  await cachePlugin.flush(wp);
+
+  const first = await fetch(`${wp.url}/__cache_harness/raw-cookie-variant`, {
+    headers: { Cookie: '_cache_harness_variant=a' },
+  });
+  const firstBody = await first.text();
+  const second = await fetch(`${wp.url}/__cache_harness/raw-cookie-variant`, {
+    headers: { Cookie: '_cache_harness_variant=b' },
+  });
+  const secondBody = await second.text();
+
+  expect(first.status).toBe(200);
+  expect(second.status).toBe(200);
+  expect(firstBody).toContain('raw cookie variant: a');
+  expect(secondBody).toContain('raw cookie variant: b');
+  expect(cachePlugin.detectStatus(second)).not.toBe('hit');
+});
+
+test('does not reuse cache when raw output varies by configured ignored cookies', async ({
+  cachePlugin,
+  wp,
+}) => {
+  await cachePlugin.flush(wp);
+
+  const first = await fetch(`${wp.url}/__cache_harness/raw-cookie-variant`, {
+    headers: { Cookie: 'wordpress_test_cookie=a' },
+  });
+  const firstBody = await first.text();
+  const second = await fetch(`${wp.url}/__cache_harness/raw-cookie-variant`, {
+    headers: { Cookie: 'wordpress_test_cookie=b' },
+  });
+  const secondBody = await second.text();
+
+  expect(first.status).toBe(200);
+  expect(second.status).toBe(200);
+  expect(firstBody).toContain('raw cookie variant: a');
+  expect(secondBody).toContain('raw cookie variant: b');
+  expect(cachePlugin.detectStatus(second)).not.toBe('hit');
+});
+
+test('does not reuse cache when raw output varies by ignored query vars', async ({
+  cachePlugin,
+  wp,
+}) => {
+  await cachePlugin.flush(wp);
+
+  const first = await fetch(`${wp.url}/__cache_harness/raw-query-variant?utm_source=a`);
+  const firstBody = await first.text();
+  const second = await fetch(`${wp.url}/__cache_harness/raw-query-variant?utm_source=b`);
+  const secondBody = await second.text();
+
+  expect(first.status).toBe(200);
+  expect(second.status).toBe(200);
+  expect(firstBody).toContain('raw query variant: a');
+  expect(secondBody).toContain('raw query variant: b');
+  expect(cachePlugin.detectStatus(second)).not.toBe('hit');
 });
 
 test('uses configured variants in the cache key', async ({ cachePlugin, wp }) => {
@@ -143,6 +221,22 @@ for (const route of ['cache-control-no-cache', 'cache-control-max-age-zero']) {
   });
 }
 
+test('bypasses shared-cache max-age zero responses', async ({ cachePlugin, wp }) => {
+  await cachePlugin.flush(wp);
+
+  const first = await fetch(`${wp.url}/__cache_harness/cache-control-s-maxage-zero`);
+  await first.text();
+  const second = await fetch(`${wp.url}/__cache_harness/cache-control-s-maxage-zero`);
+  await second.text();
+
+  expect(first.status).toBe(200);
+  expect(second.status).toBe(200);
+  expect(first.headers.get('cache-control')).toContain('s-maxage=0');
+  expect(cachePlugin.detectStatus(first)).toBe('bypass');
+  expect(cachePlugin.detectStatus(second)).toBe('bypass');
+  expect(await cachedFileCount(cachePlugin.cacheDirectory(wp) ?? '')).toBe(0);
+});
+
 for (const route of ['cache-control-private', 'cache-control-no-store']) {
   test(`treats ${route} responses as misses`, async ({ cachePlugin, wp }) => {
     const response = await fetch(`${wp.url}/__cache_harness/${route}`);
@@ -163,6 +257,63 @@ test('bypasses response codes outside the cacheable status list', async ({ cache
   expect(error.status).toBe(500);
   expect(cachePlugin.detectStatus(forbidden)).toBe('bypass');
   expect(cachePlugin.detectStatus(error)).toBe('bypass');
+});
+
+test('does not cache non-html JSON responses', async ({ cachePlugin, wp }) => {
+  await cachePlugin.flush(wp);
+
+  const first = await fetch(`${wp.url}/__cache_harness/json-timestamp`);
+  const firstBody = await first.json();
+  const second = await fetch(`${wp.url}/__cache_harness/json-timestamp`);
+  const secondBody = await second.json();
+
+  expect(first.status).toBe(200);
+  expect(second.status).toBe(200);
+  expect(first.headers.get('content-type')).toContain('application/json');
+  expect(second.headers.get('content-type')).toContain('application/json');
+  expect(cachePlugin.detectStatus(second)).not.toBe('hit');
+  expect(secondBody.generated_at).not.toBe(firstBody.generated_at);
+  expect(await cachedFileCount(cachePlugin.cacheDirectory(wp) ?? '')).toBe(0);
+});
+
+test('does not cache fatal errors after partial output', async ({ cachePlugin, wp }) => {
+  await cachePlugin.flush(wp);
+
+  const first = await fetch(`${wp.url}/__cache_harness/fatal-after-output`);
+  const firstBody = await first.text();
+
+  expect(first.status).toBe(200);
+  expect(firstBody).toContain('partial fatal output');
+  expect(cachePlugin.detectStatus(first)).not.toBe('hit');
+  expect(await cachedFileCount(cachePlugin.cacheDirectory(wp) ?? '')).toBe(0);
+
+  const second = await fetch(`${wp.url}/__cache_harness/fatal-after-output`);
+  const secondBody = await second.text();
+
+  expect(second.status).toBe(200);
+  expect(cachePlugin.detectStatus(second)).not.toBe('hit');
+  expect(secondBody).toContain('partial fatal output');
+});
+
+test('does not reuse cached responses across unkeyed Vary headers', async ({ cachePlugin, wp }) => {
+  await cachePlugin.flush(wp);
+
+  const first = await fetch(`${wp.url}/__cache_harness/vary-header`, {
+    headers: { 'X-Cache-Harness-Vary': 'a' },
+  });
+  const firstBody = await first.text();
+  const second = await fetch(`${wp.url}/__cache_harness/vary-header`, {
+    headers: { 'X-Cache-Harness-Vary': 'b' },
+  });
+  const secondBody = await second.text();
+
+  expect(first.status).toBe(200);
+  expect(second.status).toBe(200);
+  expect(first.headers.get('vary')).toContain('X-Cache-Harness-Vary');
+  expect(second.headers.get('vary')).toContain('X-Cache-Harness-Vary');
+  expect(firstBody).toContain('vary variant: a');
+  expect(secondBody).toContain('vary variant: b');
+  expect(cachePlugin.detectStatus(second)).not.toBe('hit');
 });
 
 test('caches permanent redirects', async ({ cachePlugin, wp }) => {

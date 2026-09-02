@@ -2,8 +2,8 @@ import { test as base } from '@playwright/test';
 import {
   CacheEnablerAdapter,
   type CachePluginAdapter,
-} from '../harness/src/cache-plugin.js';
-import { WordPressInstance } from '../harness/src/wordpress-instance.js';
+} from '../../harness/src/cache-plugin.js';
+import { WordPressInstance } from '../../harness/src/wordpress-instance.js';
 
 type Fixtures = {
   wp: WordPressInstance;

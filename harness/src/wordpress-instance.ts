@@ -84,13 +84,19 @@ export class WordPressInstance {
     this.serverLog = createWriteStream(this.path('server.log'), { flags: 'a' });
     this.server = spawn('wp', ['server', '--host=127.0.0.1', `--port=${this.port}`, `--docroot=${this.dir}`], {
       cwd: this.dir,
+      detached: true,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
     this.server.stdout.on('data', (chunk) => this.serverLog?.write(chunk));
     this.server.stderr.on('data', (chunk) => this.serverLog?.write(chunk));
 
-    await this.waitUntilReady();
+    try {
+      await this.waitUntilReady();
+    } catch (error) {
+      await this.stop();
+      throw error;
+    }
   }
 
   async stop(): Promise<void> {
@@ -118,11 +124,11 @@ export class WordPressInstance {
       };
 
       server.once('close', done);
-      server.kill('SIGTERM');
+      this.killServerProcessGroup(server, 'SIGTERM');
       setTimeout(() => {
         if (!resolved && server.exitCode === null && !killed) {
           killed = true;
-          server.kill('SIGKILL');
+          this.killServerProcessGroup(server, 'SIGKILL');
         }
       }, 2_000);
       setTimeout(done, 3_000);
@@ -276,6 +282,23 @@ export class WordPressInstance {
     const dbPhp = this.path('wp-content', 'plugins', 'sqlite-database-integration', 'db.copy');
     if (existsSync(dbPhp)) {
       await copyDir(dbPhp, this.path('wp-content', 'db.php'));
+    }
+  }
+
+  private killServerProcessGroup(server: ChildProcessWithoutNullStreams, signal: NodeJS.Signals): void {
+    if (server.pid === undefined) {
+      server.kill(signal);
+      return;
+    }
+
+    try {
+      process.kill(-server.pid, signal);
+    } catch (error) {
+      const code = error instanceof Error && 'code' in error ? error.code : undefined;
+
+      if (code !== 'ESRCH') {
+        server.kill(signal);
+      }
     }
   }
 

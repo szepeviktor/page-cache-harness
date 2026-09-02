@@ -6,7 +6,17 @@ on:
 
 jobs:
   tests:
+    name: Tests (${{ matrix.plugin }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        plugin:
+          - batcache
+          - cache-enabler
+          - surge
+          - wp-spider-cache
+          - wp-super-cache
 
     steps:
       - name: Check out repository
@@ -28,4 +38,4 @@ jobs:
         run: npm ci
 
       - name: Run tests
-        run: npm test
+        run: npm test -- tests/${{ matrix.plugin }}/

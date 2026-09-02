@@ -14,7 +14,7 @@ Playwright-based integration tests for WordPress page-cache plugins. The harness
 ```bash
 npm install
 npm test
-npm test -- tests/wp-spider-cache.spec.ts
+npm test -- tests/wp-spider-cache/wp-spider-cache.spec.ts
 npm run clean:wp
 ```
 
@@ -25,7 +25,7 @@ Use `npm test` for the full suite, or pass specific spec files for focused plugi
 Completed test workers remove their `.wp-harness/<worker>` installation during teardown. To keep a failed or focused run available for inspection:
 
 ```bash
-KEEP_WP_HARNESS=1 npm test -- tests/batcache.spec.ts
+KEEP_WP_HARNESS=1 npm test -- tests/batcache/batcache.spec.ts
 ```
 
 If a run is interrupted before teardown, remove leftover installs with:
