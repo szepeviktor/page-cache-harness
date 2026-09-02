@@ -51,6 +51,7 @@ export class WordPressInstance {
       `--extra-php=${this.extraConfig()}`,
     ]);
 
+    await mkdir(this.path('wp-content', 'cache-harness-temp'), { recursive: true });
     await this.installSqliteDropIn();
 
     await this.cli([
@@ -307,6 +308,7 @@ export class WordPressInstance {
       "define( 'WP_CACHE', true );",
       "define( 'WP_CACHE_CONFIG', __DIR__ . '/wp-content/surge-config.php' );",
       "define( 'WPCACHEHOME', __DIR__ . '/wp-content/plugins/wp-super-cache/' );",
+      "define( 'WP_TEMP_DIR', __DIR__ . '/wp-content/cache-harness-temp/' );",
       "define( 'FS_METHOD', 'direct' );",
       "define( 'WP_ENVIRONMENT_TYPE', 'local' );",
       "define( 'WP_DEBUG', true );",
