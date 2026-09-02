@@ -12,9 +12,9 @@ jobs:
       fail-fast: false
       matrix:
         plugin:
+          - surge
           - batcache
           - cache-enabler
-          - surge
           - wp-spider-cache
           - wp-super-cache
 
