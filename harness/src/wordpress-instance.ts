@@ -51,6 +51,8 @@ export class WordPressInstance {
       `--extra-php=${this.extraConfig()}`,
     ]);
 
+    // Keep WP-CLI plugin downloads out of shared /tmp; WordPress renames GitHub archives
+    // to deterministic Content-Disposition filenames, which can collide across workers.
     await mkdir(this.path('wp-content', 'cache-harness-temp'), { recursive: true });
     await this.installSqliteDropIn();
 
